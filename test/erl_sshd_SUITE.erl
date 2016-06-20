@@ -16,6 +16,7 @@
 -define(USERNAME, "username").
 -define(PASSWORD, "password").
 
+
 % create keys locally before running tests
 
 %%%=============================================================================
@@ -25,8 +26,33 @@
 suite() ->
     [{timetrap,{minutes,10}}].
 
-init_per_suite(Config) ->
-    start_applications(),
+all() ->
+    [{group, user_passwords},
+     {group, pwdfun}].
+
+groups() ->
+    [{user_passwords, [sequence], [can_connect]},
+     {pwdfun, [sequence], [can_connect]}].
+
+init_per_group(user_passwords, Config) ->
+    ok = application:load(erl_sshd),
+    ok = set_env(port, ?PORT),
+    ok = set_env(app, erl_sshd),
+    ok = set_env(passwords, [{?USERNAME,?PASSWORD}]),
+    application:ensure_all_started(erl_sshd),
+    case is_erl_sshd_running() of
+        false ->
+            ct:pal(Reason = "sshd server is not running"),
+            {skip, Reason};
+        true ->
+            Config
+    end;
+init_per_group(pwdfun, Config) ->
+    ok = application:load(erl_sshd),
+    ok = set_env(port, ?PORT),
+    ok = set_env(app, erl_sshd),
+    ok = set_env(pwdfun, fun ?MODULE:pwdfun/4),
+    application:ensure_all_started(erl_sshd),
     case is_erl_sshd_running() of
         false ->
             ct:pal(Reason = "sshd server is not running"),
@@ -35,11 +61,11 @@ init_per_suite(Config) ->
             Config
     end.
 
-end_per_testcase(_,_) ->
-    ok.
-
-all() ->
-    [can_connect].
+end_per_group(_Group, _Config) ->
+    ok = application:stop(erl_sshd),
+    ok = application:unload(erl_sshd),
+    ok = application:stop(ssh),
+    _Config.
 
 %%%=============================================================================
 %%% Testcases
@@ -62,15 +88,12 @@ can_connect(_Config) ->
 %%% Internal functions
 %%%=============================================================================
 
-start_applications() ->
-    ok = application:load(erl_sshd),
-    ok = set_env(port, ?PORT),
-    ok = set_env(app, erl_sshd),
-    ok = set_env(passwords, [{?USERNAME,?PASSWORD}]),
-    application:ensure_all_started(erl_sshd).
-
 is_erl_sshd_running() ->
     proplists:is_defined(erl_sshd, application:which_applications()).
+
+pwdfun(User, Password, PeerAddress, State) ->
+    ct:pal("User ~s Password ~s", [User, Password]),
+    true.
 
 set_env(Key, Value) ->
     ok = application:set_env(erl_sshd, Key, Value).
